@@ -72,8 +72,9 @@
   }
   function render(data) {
     const parts = [];
-    (data.prices || []).forEach(q => { if (Number.isFinite(Number(q.price))) parts.push(priceItem(q)); });
+    // Lead with the upcoming USD calendar, then continue into the FX pair quotes.
     (data.news || []).forEach(n => parts.push(newsItem(n)));
+    (data.prices || []).forEach(q => { if (Number.isFinite(Number(q.price))) parts.push(priceItem(q)); });
     if (!parts.length) {
       groupA.innerHTML = '<span class="empty">Market feed temporarily unavailable</span>';
     } else {
