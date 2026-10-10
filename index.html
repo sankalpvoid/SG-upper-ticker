@@ -50,6 +50,8 @@
   const track = document.getElementById('track');
   const groupA = document.getElementById('group-a');
   const groupB = document.getElementById('group-b');
+  // Keep the last valid calendar events if a later poll temporarily returns an empty feed.
+  let lastGoodNews = [];
   const money = (v, pair) => {
     if (typeof v !== 'number' || !Number.isFinite(v)) return '—';
     const digits = (pair === 'GBP/USD' || pair === 'EUR/USD') ? 5 : 2;
@@ -80,7 +82,9 @@
     const parts = [];
     // Explicit news segment first, then the five requested market instruments.
     parts.push('<span class="section-label">USD NEWS</span><span class="separator"></span>');
-    const news = Array.isArray(data.news) ? data.news : [];
+    const incomingNews = Array.isArray(data.news) ? data.news : [];
+    if (incomingNews.length) lastGoodNews = incomingNews;
+    const news = incomingNews.length ? incomingNews : lastGoodNews;
     if (news.length) news.forEach(n => parts.push(newsItem(n)));
     else parts.push('<span class="item news-unavailable">USD calendar temporarily unavailable</span><span class="separator"></span>');
     parts.push('<span class="section-label">MARKETS</span><span class="separator"></span>');
