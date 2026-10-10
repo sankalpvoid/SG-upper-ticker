@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>SG Upper FX Ticker</title>
+<title>SG Market Ticker</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@500;600;700;800&display=swap');
   :root{--bg:#11141b;--gold:#c5a866;--green:#10b981;--red:#ef4444;--text:#e9e9e7;--muted:#9297a2;--line:rgba(197,168,102,.42)}
@@ -39,7 +39,7 @@
 </style>
 </head>
 <body>
-<div class="ticker" role="marquee" aria-label="Foreign exchange prices and economic news">
+<div class="ticker" role="marquee" aria-label="Market prices and economic news">
   <div class="viewport"><div class="track" id="track">
     <div class="group" id="group-a"><span class="empty">Connecting to market data…</span></div>
     <div class="group" id="group-b" aria-hidden="true"></div>
@@ -52,7 +52,7 @@
   const groupB = document.getElementById('group-b');
   const money = (v, pair) => {
     if (typeof v !== 'number' || !Number.isFinite(v)) return '—';
-    const digits = pair.endsWith('JPY') ? 3 : 5;
+    const digits = (pair === 'GBP/USD' || pair === 'EUR/USD') ? 5 : 2;
     return v.toLocaleString('en-US',{minimumFractionDigits:digits,maximumFractionDigits:digits});
   };
   const safe = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -74,13 +74,13 @@
   }
   function render(data) {
     const parts = [];
-    // Explicit news segment first, then a compact six-pair market segment.
+    // Explicit news segment first, then the five requested market instruments.
     parts.push('<span class="section-label">USD NEWS</span><span class="separator"></span>');
     const news = Array.isArray(data.news) ? data.news : [];
     if (news.length) news.forEach(n => parts.push(newsItem(n)));
     else parts.push('<span class="item news-unavailable">USD calendar temporarily unavailable</span><span class="separator"></span>');
-    parts.push('<span class="section-label">FOREX</span><span class="separator"></span>');
-    (data.prices || []).slice(0, 6).forEach(q => { if (Number.isFinite(Number(q.price))) parts.push(priceItem(q)); });
+    parts.push('<span class="section-label">MARKETS</span><span class="separator"></span>');
+    (data.prices || []).slice(0, 5).forEach(q => { if (Number.isFinite(Number(q.price))) parts.push(priceItem(q)); });
     if (!parts.length) {
       groupA.innerHTML = '<span class="empty">Market feed temporarily unavailable</span>';
       groupB.innerHTML = groupA.innerHTML;
