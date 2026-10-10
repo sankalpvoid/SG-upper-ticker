@@ -58,12 +58,15 @@ async function getNews() {
       timestamp: new Date(item.date).getTime(),
       day: dayKey(new Date(item.date))
     }))
-    // Show today's USD events first. If there are too few (including weekends),
-    // continue with the next scheduled USD events later in the published calendar.
-    .filter(item => Number.isFinite(item.timestamp) && item.day >= today)
+    .filter(item => Number.isFinite(item.timestamp))
     .sort((a, b) => a.timestamp - b.timestamp || IMPACT_ORDER[a.impact] - IMPACT_ORDER[b.impact]);
 
-  return events.slice(0, 4).map(({ day, ...item }) => item);
+  // Prefer today's and upcoming USD events. On weekends, the public "this week"
+  // calendar can contain only past events; show the latest published events with
+  // their dates rather than leaving the ticker blank or implying they are upcoming.
+  const upcoming = events.filter(item => item.day >= today);
+  const selected = upcoming.length ? upcoming.slice(0, 4) : events.slice(-4).reverse();
+  return selected.map(({ day, ...item }) => ({ ...item, day }));
 }
 
 module.exports = async function handler(req, res) {
