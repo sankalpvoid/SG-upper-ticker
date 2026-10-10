@@ -28,6 +28,7 @@ async function getGoldSpotQuote() {
 
 const IMPACT_ORDER = { High: 0, Medium: 1, Low: 2 };
 let calendarDebug = { feedErrors: [] };
+let newsCache = { value: null, expiresAt: 0 };
 
 async function getQuote(symbol, pair) {
   const url = "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(symbol) + "?range=1d&interval=5m";
@@ -107,69 +108,96 @@ async function getPublishedCalendarValues() {
 }
 
 async function getNews() {
-  const urls = [
-    "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-    "https://nfs.faireconomy.media/ff_calendar_nextweek.json"
-  ];
-  // Saturday/Sunday often have no remaining events in the current-week feed.
-  // Merge this week and next week so the ticker can always find the next USD releases.
-  const [results, publishedValues] = await Promise.all([
-    Promise.allSettled(urls.map(async url => {
-      const response = await fetch(url, {
-        headers: { "User-Agent": "Mozilla/5.0 SG-Upper-Ticker/1.0", "Accept": "application/json" },
-        signal: AbortSignal.timeout(8000)
-      });
-      if (!response.ok) throw new Error("ForexFactory calendar returned " + response.status);
-      return response.json();
-    })),
-    // Run HTML enrichment in parallel so it doesn't extend the serverless function's timeout.
-    getPublishedCalendarValues().catch(error => { calendarDebug.enrichmentError = String(error); return new Map(); })
-  ]);
-  calendarDebug.feedErrors = results.flatMap((result, index) => result.status === "rejected" ? [{ url: urls[index], error: String(result.reason) }] : []);
-  const calendars = results.filter(result => result.status === "fulfilled").map(result => result.value);
-  if (!calendars.length) throw new Error("ForexFactory calendars unavailable");
+  const now = Date.now();
+  // Keep the upstream feed within its strict rate limit. The browser polls this API
+  // frequently, so reuse the last successful calendar for five minutes per warm instance.
+  if (newsCache.value && now < newsCache.expiresAt) return newsCache.value;
+
+  const thisWeekUrl = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
+  const nextWeekUrl = "https://nfs.faireconomy.media/ff_calendar_nextweek.json";
+  const fetchCalendar = async url => {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "en-US,en;q=0.9"
+      },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!response.ok) throw new Error("ForexFactory calendar returned " + response.status);
+    return response.json();
+  };
   const dayKey = value => new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit"
   }).format(value);
-  const now = Date.now();
-  const unique = new Map();
-  calendars.flat().forEach(item => {
-    // ForexFactory's JSON feed uses "country" (e.g. USD), not "currency".
-    if (String(item.currency || item.country || "").toUpperCase() !== "USD") return;
-    if (!["High", "Medium", "Low"].includes(item.impact)) return;
-    if (!item.title || !item.date) return;
+  const normalize = items => items.flatMap(item => {
+    if (String(item.currency || item.country || "").toUpperCase() !== "USD") return [];
+    if (!["High", "Medium", "Low"].includes(item.impact)) return [];
+    if (!item.title || !item.date) return [];
     const timestamp = new Date(item.date).getTime();
-    if (!Number.isFinite(timestamp)) return;
-    const key = String(item.title).trim().toLowerCase() + "|" + timestamp;
-    if (unique.has(key)) return;
-    const published = publishedValues.get(String(item.title).trim().toLowerCase() + "|USD") || {};
-    const actual = item.actual ?? item.Actual ?? "";
-    const forecast = item.forecast ?? item.Forecast ?? "";
-    const previous = item.previous ?? item.prev ?? item.Previous ?? "";
-    unique.set(key, {
+    if (!Number.isFinite(timestamp)) return [];
+    return [{
       title: item.title,
       impact: item.impact,
       time: item.date,
-      actual: String(actual).trim() ? actual : (published.actual || ""),
-      forecast: String(forecast).trim() ? forecast : (published.forecast || ""),
-      previous: String(published.previous || "").trim() ? published.previous : previous,
+      actual: String(item.actual ?? item.Actual ?? "").trim(),
+      forecast: String(item.forecast ?? item.Forecast ?? "").trim(),
+      previous: String(item.previous ?? item.prev ?? item.Previous ?? "").trim(),
       timestamp,
       day: dayKey(new Date(timestamp))
-    });
+    }];
   });
+  const select = events => {
+    const unique = new Map();
+    events.forEach(item => {
+      const key = String(item.title).trim().toLowerCase() + "|" + item.timestamp;
+      if (!unique.has(key)) unique.set(key, item);
+    });
+    const sorted = [...unique.values()].sort((a, b) =>
+      a.timestamp - b.timestamp || IMPACT_ORDER[a.impact] - IMPACT_ORDER[b.impact]
+    );
+    const upcoming = sorted.filter(item => item.timestamp >= Date.now());
+    return (upcoming.length ? upcoming.slice(0, 6) : sorted.slice(-3).reverse())
+      .map(({ timestamp, ...item }) => item);
+  };
 
-  const events = [...unique.values()].sort((a, b) =>
-    a.timestamp - b.timestamp || IMPACT_ORDER[a.impact] - IMPACT_ORDER[b.impact]
-  );
-  // Show the next six upcoming USD releases across both feeds so the news segment has enough duration.
-  // When no future events remain in the feed window, show the latest three rather than silently dropping news.
-  const upcoming = events.filter(item => item.timestamp >= now);
-  const selected = upcoming.length ? upcoming.slice(0, 6) : events.slice(-3).reverse();
-  return selected.map(({ timestamp, ...item }) => item);
+  const errors = [];
+  let events = [];
+  try {
+    events = normalize(await fetchCalendar(thisWeekUrl));
+  } catch (error) {
+    errors.push({ url: thisWeekUrl, error: String(error) });
+  }
+
+  // The next-week JSON endpoint is often a 404 and counts toward the source's
+  // rate limit. Only request it when this week's feed has no upcoming USD releases
+  // (typically late Saturday), rather than hitting both endpoints on every poll.
+  if (!events.some(item => item.timestamp >= Date.now())) {
+    try {
+      events = events.concat(normalize(await fetchCalendar(nextWeekUrl)));
+    } catch (error) {
+      errors.push({ url: nextWeekUrl, error: String(error) });
+    }
+  }
+
+  calendarDebug = { feedErrors: errors };
+  if (!events.length) {
+    // If upstream is temporarily rate-limited, preserve a recent successful result.
+    if (newsCache.value) return newsCache.value;
+    throw new Error("ForexFactory calendar feeds unavailable");
+  }
+
+  const selected = select(events);
+  if (!selected.length) {
+    if (newsCache.value) return newsCache.value;
+    throw new Error("No usable USD calendar events");
+  }
+  newsCache = { value: selected, expiresAt: Date.now() + 5 * 60 * 1000 };
+  return selected;
 }
 
 module.exports = async function handler(req, res) {
-  res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=60");
+  res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method !== "GET") {
     res.status(405).json({ error: "Method not allowed" });
