@@ -1,10 +1,22 @@
 const SYMBOLS = [
-  ["BTC-USD", "BTC/USD"],
-  ["XAUUSD=X", "XAU/USD"],
   ["^IXIC", "NASDAQ"],
+  ["BTC-USD", "BTC/USD"],
   ["GBPUSD=X", "GBP/USD"],
   ["EURUSD=X", "EUR/USD"],
 ];
+
+async function getGoldSpotQuote() {
+  const response = await fetch("https://api.goldprice.dev/v1/prices?symbol=XAU-USD-SPOT", {
+    headers: { "User-Agent": "Mozilla/5.0 SG-Upper-Ticker/1.0", "Accept": "application/json" },
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!response.ok) throw new Error("Gold spot source returned " + response.status);
+  const payload = await response.json();
+  const quote = payload?.symbols?.find(item => item.symbol === "XAU" && item.quote_currency === "USD");
+  const price = Number(quote?.price);
+  if (!Number.isFinite(price) || quote?.is_stale === true) throw new Error("Fresh XAU/USD spot quote unavailable");
+  return { pair: "XAU/USD", price, changePct: null };
+}
 
 const IMPACT_ORDER = { High: 0, Medium: 1, Low: 2 };
 
@@ -92,7 +104,11 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const quotes = await Promise.allSettled(SYMBOLS.map(([symbol, pair]) => getQuote(symbol, pair)));
+  const quotes = await Promise.allSettled([
+    getGoldSpotQuote(),
+    ...SYMBOLS.map(([symbol, pair]) => getQuote(symbol, pair))
+  ]);
+  // Preserve the requested display order: XAU/USD first, followed by NASDAQ, BTC/USD, GBP/USD, EUR/USD.
   const prices = quotes.filter(item => item.status === "fulfilled").map(item => item.value);
   let news = [];
   let newsUnavailable = false;
