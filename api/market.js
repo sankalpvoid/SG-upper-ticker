@@ -46,6 +46,55 @@ async function getQuote(symbol, pair) {
   };
 }
 
+function decodeHtml(value) {
+  return String(value || "")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(parseInt(code, 16)));
+}
+
+function htmlCellText(row, cellName) {
+  const pattern = new RegExp('<td\\b(?=[^>]*class=["\\'][^"\\']*\\bcalendar__' + cellName + '\\b)[^>]*>([\\s\\S]*?)<\\/td>', 'i');
+  const match = row.match(pattern);
+  if (!match) return "";
+  return decodeHtml(match[1]
+    .replace(/<br\\s*\\/?\\s*>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\\s+/g, " ")
+    .trim());
+}
+
+// The public weekly JSON feed omits released actuals. Enrich it from the calendar page.
+async function getPublishedCalendarValues() {
+  const response = await fetch("https://www.forexfactory.com/calendar?week=this", {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (compatible; SG-Upper-Ticker/1.0)",
+      "Accept": "text/html,application/xhtml+xml"
+    },
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!response.ok) throw new Error("ForexFactory calendar page returned " + response.status);
+  const html = await response.text();
+  const rows = html.match(/<tr\\b[^>]*class=["'][^"']*calendar__row[^"']*["'][^>]*>[\\s\\S]*?<\\/tr>/gi) || [];
+  const values = new Map();
+  for (const row of rows) {
+    const title = htmlCellText(row, "event");
+    const country = htmlCellText(row, "currency").toUpperCase();
+    if (!title || country !== "USD") continue;
+    const actual = htmlCellText(row, "actual");
+    const forecast = htmlCellText(row, "forecast");
+    const previous = htmlCellText(row, "previous");
+    if (![actual, forecast, previous].some(value => value !== "")) continue;
+    values.set(title.trim().toLowerCase() + "|" + country, { actual, forecast, previous });
+  }
+  return values;
+}
+
 async function getNews() {
   const urls = [
     "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
@@ -67,6 +116,8 @@ async function getNews() {
     timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit"
   }).format(value);
   const now = Date.now();
+  // Best-effort enrichment: if the HTML page is unavailable, the JSON feed still works.
+  const publishedValues = await getPublishedCalendarValues().catch(() => new Map());
 
   const unique = new Map();
   calendars.flat().forEach(item => {
@@ -78,13 +129,17 @@ async function getNews() {
     if (!Number.isFinite(timestamp)) return;
     const key = String(item.title).trim().toLowerCase() + "|" + timestamp;
     if (unique.has(key)) return;
+    const published = publishedValues.get(String(item.title).trim().toLowerCase() + "|USD") || {};
+    const actual = item.actual ?? item.Actual ?? "";
+    const forecast = item.forecast ?? item.Forecast ?? "";
+    const previous = item.previous ?? item.prev ?? item.Previous ?? "";
     unique.set(key, {
       title: item.title,
       impact: item.impact,
       time: item.date,
-      actual: item.actual || "",
-      forecast: item.forecast || "",
-      previous: item.previous || item.prev || "",
+      actual: String(actual).trim() ? actual : (published.actual || ""),
+      forecast: String(forecast).trim() ? forecast : (published.forecast || ""),
+      previous: String(published.previous || "").trim() ? published.previous : previous,
       timestamp,
       day: dayKey(new Date(timestamp))
     });
