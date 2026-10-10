@@ -72,7 +72,7 @@ function htmlCellText(row, cellName) {
 
 // The public weekly JSON feed omits released actuals. Enrich it from the calendar page.
 async function getPublishedCalendarValues() {
-  const response = await fetch("https://www.forexfactory.com/calendar?week=this", {
+  const response = await fetch("https://calendar.forexfactory.com/calendar?week=this", {
     headers: {
       "User-Agent": "Mozilla/5.0 (compatible; SG-Upper-Ticker/1.0)",
       "Accept": "text/html,application/xhtml+xml"
