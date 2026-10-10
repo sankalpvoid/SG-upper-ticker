@@ -70,7 +70,7 @@
     const today = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
     const eventDate = time && !Number.isNaN(time.getTime()) ? new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(time) : '';
     const dateLabel = eventDate && eventDate < today ? eventDay+' · ' : '';
-    return '<span class="item"><span class="impact '+(impact==='high'?'high':impact==='medium'?'medium':'low')+'"></span><span class="news-time">'+safe(dateLabel+timeLabel)+'</span><span class="news-title">'+safe(n.title)+'</span>'+(n.actual ? '<span class="news-meta">ACT '+safe(n.actual)+'</span>' : '')+(n.forecast ? '<span class="news-meta">FC '+safe(n.forecast)+'</span>' : '')+'</span><span class="separator"></span>';
+    return '<span class="item"><span class="impact '+(impact==='high'?'high':impact==='medium'?'medium':'low')+'"></span><span class="news-time">'+safe(dateLabel+timeLabel)+'</span><span class="news-title">'+safe(n.title)+'</span>'+'<span class="news-meta">ACT '+safe(n.actual || '—')+'</span>'+'<span class="news-meta">FC '+safe(n.forecast || '—')+'</span>'+'<span class="news-meta">PREV '+safe(n.previous || n.prev || '—')+'</span>'+'</span><span class="separator"></span>';
   }
   function render(data) {
     const parts = [];
