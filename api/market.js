@@ -59,13 +59,13 @@ function decodeHtml(value) {
 }
 
 function htmlCellText(row, cellName) {
-  const pattern = new RegExp('<td\\b(?=[^>]*class=["\\'][^"\\']*\\bcalendar__' + cellName + '\\b)[^>]*>([\\s\\S]*?)<\\/td>', 'i');
+  const pattern = new RegExp(`<td\\b(?=[^>]*class=["'][^"']*\\bcalendar__${cellName}\\b)[^>]*>([\\s\\S]*?)<\\/td>`, "i");
   const match = row.match(pattern);
   if (!match) return "";
   return decodeHtml(match[1]
-    .replace(/<br\\s*\\/?\\s*>/gi, " ")
+    .replace(/<br\s*\/?\s*>/gi, " ")
     .replace(/<[^>]*>/g, " ")
-    .replace(/\\s+/g, " ")
+    .replace(/\s+/g, " ")
     .trim());
 }
 
@@ -80,7 +80,7 @@ async function getPublishedCalendarValues() {
   });
   if (!response.ok) throw new Error("ForexFactory calendar page returned " + response.status);
   const html = await response.text();
-  const rows = html.match(/<tr\\b[^>]*class=["'][^"']*calendar__row[^"']*["'][^>]*>[\\s\\S]*?<\\/tr>/gi) || [];
+  const rows = html.match(/<tr\b[^>]*class=["'][^"']*calendar__row[^"']*["'][^>]*>[\s\S]*?<\/tr>/gi) || [];
   const values = new Map();
   for (const row of rows) {
     const title = htmlCellText(row, "event");
