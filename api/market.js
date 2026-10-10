@@ -40,7 +40,7 @@ async function getNews() {
   ];
   // Saturday/Sunday often have no remaining events in the current-week feed.
   // Merge this week and next week so the ticker can always find the next USD releases.
-  const calendars = await Promise.all(urls.map(async url => {
+  const results = await Promise.allSettled(urls.map(async url => {
     const response = await fetch(url, {
       headers: { "User-Agent": "Mozilla/5.0 SG-Upper-Ticker/1.0", "Accept": "application/json" },
       signal: AbortSignal.timeout(8000)
@@ -48,6 +48,8 @@ async function getNews() {
     if (!response.ok) throw new Error("ForexFactory calendar returned " + response.status);
     return response.json();
   }));
+  const calendars = results.filter(result => result.status === "fulfilled").map(result => result.value);
+  if (!calendars.length) throw new Error("ForexFactory calendars unavailable");
   const dayKey = value => new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit"
   }).format(value);
@@ -55,7 +57,8 @@ async function getNews() {
 
   const unique = new Map();
   calendars.flat().forEach(item => {
-    if (String(item.currency || "").toUpperCase() !== "USD") return;
+    // ForexFactory's JSON feed uses "country" (e.g. USD), not "currency".
+    if (String(item.currency || item.country || "").toUpperCase() !== "USD") return;
     if (!["High", "Medium", "Low"].includes(item.impact)) return;
     if (!item.title || !item.date) return;
     const timestamp = new Date(item.date).getTime();
