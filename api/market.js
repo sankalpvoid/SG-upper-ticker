@@ -84,6 +84,7 @@ async function getNews() {
       time: item.date,
       actual: item.actual || "",
       forecast: item.forecast || "",
+      previous: item.previous || item.prev || "",
       timestamp,
       day: dayKey(new Date(timestamp))
     });
