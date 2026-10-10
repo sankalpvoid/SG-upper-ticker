@@ -116,7 +116,7 @@ async function getNews() {
       return response.json();
     })),
     // Run HTML enrichment in parallel so it doesn't extend the serverless function's timeout.
-    getPublishedCalendarValues().catch(() => new Map())
+    getPublishedCalendarValues().catch(error => { calendarDebug = { error: String(error) }; return new Map(); })
   ]);
   const calendars = results.filter(result => result.status === "fulfilled").map(result => result.value);
   if (!calendars.length) throw new Error("ForexFactory calendars unavailable");
