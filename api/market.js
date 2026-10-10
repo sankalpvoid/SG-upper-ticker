@@ -122,6 +122,6 @@ module.exports = async function handler(req, res) {
     updatedAt: new Date().toISOString(),
     prices,
     news,
-    partial: prices.length !== SYMBOLS.length || newsUnavailable
+    partial: prices.length !== SYMBOLS.length + 1 || newsUnavailable
   });
 };
