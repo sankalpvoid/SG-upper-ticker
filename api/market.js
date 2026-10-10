@@ -22,6 +22,7 @@ async function getGoldSpotQuote() {
 }
 
 const IMPACT_ORDER = { High: 0, Medium: 1, Low: 2 };
+let calendarDebug = {};
 
 async function getQuote(symbol, pair) {
   const url = "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(symbol) + "?range=1d&interval=5m";
@@ -81,6 +82,7 @@ async function getPublishedCalendarValues() {
   if (!response.ok) throw new Error("ForexFactory calendar page returned " + response.status);
   const html = await response.text();
   const rows = html.match(/<tr\b[^>]*class=["'][^"']*calendar__row[^"']*["'][^>]*>[\s\S]*?<\/tr>/gi) || [];
+  calendarDebug = { status: response.status, htmlLength: html.length, rowCount: rows.length, htmlStart: html.slice(0, 120) };
   const values = new Map();
   for (const row of rows) {
     const title = htmlCellText(row, "event");
@@ -92,7 +94,8 @@ async function getPublishedCalendarValues() {
     if (![actual, forecast, previous].some(value => value !== "")) continue;
     values.set(title.trim().toLowerCase() + "|" + country, { actual, forecast, previous });
   }
-  console.log("ForexFactory HTML enrichment:", { htmlLength: html.length, rowCount: rows.length, valueCount: values.size });
+  calendarDebug.valueCount = values.size;
+  calendarDebug.sampleRow = rows[0] ? rows[0].slice(0, 300) : "";
   return values;
 }
 
@@ -183,6 +186,7 @@ module.exports = async function handler(req, res) {
     updatedAt: new Date().toISOString(),
     prices,
     news,
-    partial: prices.length !== SYMBOLS.length + 1 || newsUnavailable
+    partial: prices.length !== SYMBOLS.length + 1 || newsUnavailable,
+    ...(req.query?.debug === "1" ? { debug: calendarDebug } : {})
   });
 };
