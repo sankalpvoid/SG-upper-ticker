@@ -92,6 +92,7 @@ async function getPublishedCalendarValues() {
     if (![actual, forecast, previous].some(value => value !== "")) continue;
     values.set(title.trim().toLowerCase() + "|" + country, { actual, forecast, previous });
   }
+  console.log("ForexFactory HTML enrichment:", { htmlLength: html.length, rowCount: rows.length, valueCount: values.size });
   return values;
 }
 
