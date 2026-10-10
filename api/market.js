@@ -102,23 +102,24 @@ async function getNews() {
   ];
   // Saturday/Sunday often have no remaining events in the current-week feed.
   // Merge this week and next week so the ticker can always find the next USD releases.
-  const results = await Promise.allSettled(urls.map(async url => {
-    const response = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 SG-Upper-Ticker/1.0", "Accept": "application/json" },
-      signal: AbortSignal.timeout(8000)
-    });
-    if (!response.ok) throw new Error("ForexFactory calendar returned " + response.status);
-    return response.json();
-  }));
+  const [results, publishedValues] = await Promise.all([
+    Promise.allSettled(urls.map(async url => {
+      const response = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0 SG-Upper-Ticker/1.0", "Accept": "application/json" },
+        signal: AbortSignal.timeout(8000)
+      });
+      if (!response.ok) throw new Error("ForexFactory calendar returned " + response.status);
+      return response.json();
+    })),
+    // Run HTML enrichment in parallel so it doesn't extend the serverless function's timeout.
+    getPublishedCalendarValues().catch(() => new Map())
+  ]);
   const calendars = results.filter(result => result.status === "fulfilled").map(result => result.value);
   if (!calendars.length) throw new Error("ForexFactory calendars unavailable");
   const dayKey = value => new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit"
   }).format(value);
   const now = Date.now();
-  // Best-effort enrichment: if the HTML page is unavailable, the JSON feed still works.
-  const publishedValues = await getPublishedCalendarValues().catch(() => new Map());
-
   const unique = new Map();
   calendars.flat().forEach(item => {
     // ForexFactory's JSON feed uses "country" (e.g. USD), not "currency".
