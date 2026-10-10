@@ -16,7 +16,7 @@
   .ticker:before{left:0;background:linear-gradient(90deg,var(--bg),transparent)}
   .ticker:after{right:0;background:linear-gradient(270deg,var(--bg),transparent)}
   .viewport{width:100%;overflow:hidden;white-space:nowrap}
-  .track{display:flex;width:max-content;align-items:center;will-change:transform;animation:scroll 105s linear infinite}
+  .track{display:flex;width:max-content;align-items:center;will-change:transform;animation:scroll 85s linear infinite}
   .ticker:hover .track{animation-play-state:paused}
   .group{display:flex;align-items:center;flex-shrink:0}
   .item{height:60px;display:inline-flex;align-items:center;gap:9px;padding:0 22px;flex-shrink:0;white-space:nowrap;font-size:14px;letter-spacing:.01em}
@@ -27,7 +27,7 @@
   .separator{height:24px;width:1px;margin:0 20px;background:var(--line);flex-shrink:0}
   .impact{width:6px;height:6px;border-radius:50%;display:inline-block;flex-shrink:0}
   .high{background:#ef4444;box-shadow:0 0 7px rgba(239,68,68,.3)}
-  .medium{background:#f59e0b}.low{background:#9ca3af}
+  .medium{background:#f97316}.low{background:#facc15;box-shadow:0 0 6px rgba(250,204,21,.22)}
   .news-time{font-size:10px;color:var(--gold);font-weight:700;font-variant-numeric:tabular-nums}
   .news-title{font:700 17px/1 "Barlow Condensed",sans-serif;letter-spacing:.2px;color:#e7e8eb}
   .news-meta{font-size:10px;color:var(--muted)}
@@ -80,7 +80,7 @@
     // Keep the second copy exactly half a track away for a seamless loop.
     requestAnimationFrame(() => {
       const width = groupA.getBoundingClientRect().width;
-      const seconds = Math.max(55, Math.min(145, width / 15));
+      const seconds = Math.max(45, Math.min(125, width / 18.2));
       track.style.animationDuration = seconds + 's';
     });
   }
