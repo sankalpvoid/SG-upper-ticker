@@ -7,7 +7,12 @@ const SYMBOLS = [
 
 async function getGoldSpotQuote() {
   const response = await fetch("https://xaus.com/api/v1/spot?compact=1", {
-    headers: { "User-Agent": "Mozilla/5.0 SG-Upper-Ticker/1.0", "Accept": "application/json" },
+    headers: {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "Accept": "application/json,text/plain,*/*",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Cache-Control": "no-cache"
+        },
     signal: AbortSignal.timeout(8000)
   });
   if (!response.ok) throw new Error("XAU/USD spot source returned " + response.status);
@@ -22,7 +27,7 @@ async function getGoldSpotQuote() {
 }
 
 const IMPACT_ORDER = { High: 0, Medium: 1, Low: 2 };
-let calendarDebug = {};
+let calendarDebug = { feedErrors: [] };
 
 async function getQuote(symbol, pair) {
   const url = "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(symbol) + "?range=1d&interval=5m";
@@ -74,8 +79,10 @@ function htmlCellText(row, cellName) {
 async function getPublishedCalendarValues() {
   const response = await fetch("https://calendar.forexfactory.com/calendar?week=this", {
     headers: {
-      "User-Agent": "Mozilla/5.0 (compatible; SG-Upper-Ticker/1.0)",
-      "Accept": "text/html,application/xhtml+xml"
+      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Cache-Control": "no-cache"
     },
     signal: AbortSignal.timeout(8000)
   });
@@ -116,8 +123,9 @@ async function getNews() {
       return response.json();
     })),
     // Run HTML enrichment in parallel so it doesn't extend the serverless function's timeout.
-    getPublishedCalendarValues().catch(error => { calendarDebug = { error: String(error) }; return new Map(); })
+    getPublishedCalendarValues().catch(error => { calendarDebug.enrichmentError = String(error); return new Map(); })
   ]);
+  calendarDebug.feedErrors = results.flatMap((result, index) => result.status === "rejected" ? [{ url: urls[index], error: String(result.reason) }] : []);
   const calendars = results.filter(result => result.status === "fulfilled").map(result => result.value);
   if (!calendars.length) throw new Error("ForexFactory calendars unavailable");
   const dayKey = value => new Intl.DateTimeFormat("en-CA", {
