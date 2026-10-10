@@ -1,10 +1,9 @@
 const SYMBOLS = [
-  ["EURUSD=X", "EUR/USD"],
+  ["BTC-USD", "BTC/USD"],
+  ["XAUUSD=X", "XAU/USD"],
+  ["^IXIC", "NASDAQ"],
   ["GBPUSD=X", "GBP/USD"],
-  ["USDJPY=X", "USD/JPY"],
-  ["USDCHF=X", "USD/CHF"],
-  ["USDCAD=X", "USD/CAD"],
-  ["AUDUSD=X", "AUD/USD"],
+  ["EURUSD=X", "EUR/USD"],
 ];
 
 const IMPACT_ORDER = { High: 0, Medium: 1, Low: 2 };
