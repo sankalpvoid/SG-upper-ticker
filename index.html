@@ -19,7 +19,9 @@
   .track{display:flex;width:max-content;align-items:center;will-change:transform;animation:scroll 56.67s linear infinite}
   .ticker:hover .track{animation-play-state:paused}
   .group{display:flex;align-items:center;flex-shrink:0}
-  .item{height:60px;display:inline-flex;align-items:center;gap:9px;padding:0 22px;flex-shrink:0;white-space:nowrap;font-size:14px;letter-spacing:.01em}
+  .item{height:60px;display:inline-flex;align-items:center;gap:9px;padding:0 18px;flex-shrink:0;white-space:nowrap;font-size:14px;letter-spacing:.01em}
+  .section-label{font-size:10px;font-weight:800;letter-spacing:.14em;color:var(--gold);padding:0 16px;flex-shrink:0}
+  .news-unavailable{font:700 13px/1 Inter,sans-serif;color:var(--muted)}
   .pair{font-weight:750;letter-spacing:.055em;color:#f2f0e9;font-size:12px}
   .price{font:700 18px/1 "Barlow Condensed",sans-serif;font-variant-numeric:tabular-nums;color:#e4e6e8}
   .change{font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
@@ -72,11 +74,16 @@
   }
   function render(data) {
     const parts = [];
-    // Lead with the upcoming USD calendar, then continue into the FX pair quotes.
-    (data.news || []).forEach(n => parts.push(newsItem(n)));
-    (data.prices || []).forEach(q => { if (Number.isFinite(Number(q.price))) parts.push(priceItem(q)); });
+    // Explicit news segment first, then a compact six-pair market segment.
+    parts.push('<span class="section-label">USD NEWS</span><span class="separator"></span>');
+    const news = Array.isArray(data.news) ? data.news : [];
+    if (news.length) news.forEach(n => parts.push(newsItem(n)));
+    else parts.push('<span class="item news-unavailable">USD calendar temporarily unavailable</span><span class="separator"></span>');
+    parts.push('<span class="section-label">FOREX</span><span class="separator"></span>');
+    (data.prices || []).slice(0, 6).forEach(q => { if (Number.isFinite(Number(q.price))) parts.push(priceItem(q)); });
     if (!parts.length) {
       groupA.innerHTML = '<span class="empty">Market feed temporarily unavailable</span>';
+      groupB.innerHTML = groupA.innerHTML;
     } else {
       const markup = parts.join('');
       groupA.innerHTML = markup;
@@ -85,7 +92,7 @@
     // Keep the second copy exactly half a track away for a seamless loop.
     requestAnimationFrame(() => {
       const width = groupA.getBoundingClientRect().width;
-      const seconds = Math.max(30, Math.min(83.333, width / 27.3));
+      const seconds = Math.max(38, Math.min(100, width / 25));
       track.style.animationDuration = seconds + 's';
     });
   }

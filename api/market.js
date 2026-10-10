@@ -5,7 +5,6 @@ const SYMBOLS = [
   ["USDCHF=X", "USD/CHF"],
   ["USDCAD=X", "USD/CAD"],
   ["AUDUSD=X", "AUD/USD"],
-  ["NZDUSD=X", "NZD/USD"]
 ];
 
 const IMPACT_ORDER = { High: 0, Medium: 1, Low: 2 };
@@ -79,10 +78,10 @@ async function getNews() {
   const events = [...unique.values()].sort((a, b) =>
     a.timestamp - b.timestamp || IMPACT_ORDER[a.impact] - IMPACT_ORDER[b.impact]
   );
-  // Show the next three upcoming USD releases, regardless of which day they fall on.
-  // If fewer than three remain in the two feeds, show all remaining upcoming events.
+  // Show the next six upcoming USD releases across both feeds so the news segment has enough duration.
+  // When no future events remain in the feed window, show the latest three rather than silently dropping news.
   const upcoming = events.filter(item => item.timestamp >= now);
-  const selected = upcoming.length ? upcoming.slice(0, 3) : events.slice(-3).reverse();
+  const selected = upcoming.length ? upcoming.slice(0, 6) : events.slice(-3).reverse();
   return selected.map(({ timestamp, ...item }) => item);
 }
 
