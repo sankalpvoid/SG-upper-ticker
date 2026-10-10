@@ -40,8 +40,14 @@ async function getNews() {
   });
   if (!response.ok) throw new Error("ForexFactory calendar returned " + response.status);
   const rows = await response.json();
-  const now = Date.now();
-  return rows
+  const dayKey = value => new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit"
+  }).format(value);
+  const today = dayKey(new Date());
+  const tomorrowDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const tomorrow = dayKey(tomorrowDate);
+
+  const events = rows
     .filter(item => String(item.currency || "").toUpperCase() === "USD")
     .filter(item => ["High", "Medium", "Low"].includes(item.impact))
     .filter(item => item.title && item.date)
@@ -51,11 +57,21 @@ async function getNews() {
       time: item.date,
       actual: item.actual || "",
       forecast: item.forecast || "",
-      timestamp: new Date(item.date).getTime()
+      timestamp: new Date(item.date).getTime(),
+      day: dayKey(new Date(item.date))
     }))
-    .filter(item => Number.isFinite(item.timestamp) && item.timestamp > now - 3 * 60 * 60 * 1000)
-    .sort((a, b) => a.timestamp - b.timestamp || IMPACT_ORDER[a.impact] - IMPACT_ORDER[b.impact])
-    .slice(0, 30);
+    .filter(item => Number.isFinite(item.timestamp) && [today, tomorrow].includes(item.day))
+    .sort((a, b) => a.timestamp - b.timestamp || IMPACT_ORDER[a.impact] - IMPACT_ORDER[b.impact]);
+
+  // Prefer today's USD calendar, then add tomorrow's events only when today's
+  // calendar has fewer than three, so the ticker shows 3–4 distinct items.
+  const todaysEvents = events.filter(item => item.day === today);
+  const tomorrowsEvents = events.filter(item => item.day === tomorrow);
+  const selected = todaysEvents.slice(0, 4);
+  if (selected.length < 3) {
+    selected.push(...tomorrowsEvents.slice(0, 4 - selected.length));
+  }
+  return selected.slice(0, 4).map(({ day, ...item }) => item);
 }
 
 module.exports = async function handler(req, res) {
