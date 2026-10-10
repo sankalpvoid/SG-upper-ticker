@@ -44,8 +44,6 @@ async function getNews() {
     timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit"
   }).format(value);
   const today = dayKey(new Date());
-  const tomorrowDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const tomorrow = dayKey(tomorrowDate);
 
   const events = rows
     .filter(item => String(item.currency || "").toUpperCase() === "USD")
@@ -60,18 +58,12 @@ async function getNews() {
       timestamp: new Date(item.date).getTime(),
       day: dayKey(new Date(item.date))
     }))
-    .filter(item => Number.isFinite(item.timestamp) && [today, tomorrow].includes(item.day))
+    // Show today's USD events first. If there are too few (including weekends),
+    // continue with the next scheduled USD events later in the published calendar.
+    .filter(item => Number.isFinite(item.timestamp) && item.day >= today)
     .sort((a, b) => a.timestamp - b.timestamp || IMPACT_ORDER[a.impact] - IMPACT_ORDER[b.impact]);
 
-  // Prefer today's USD calendar, then add tomorrow's events only when today's
-  // calendar has fewer than three, so the ticker shows 3–4 distinct items.
-  const todaysEvents = events.filter(item => item.day === today);
-  const tomorrowsEvents = events.filter(item => item.day === tomorrow);
-  const selected = todaysEvents.slice(0, 4);
-  if (selected.length < 3) {
-    selected.push(...tomorrowsEvents.slice(0, 4 - selected.length));
-  }
-  return selected.slice(0, 4).map(({ day, ...item }) => item);
+  return events.slice(0, 4).map(({ day, ...item }) => item);
 }
 
 module.exports = async function handler(req, res) {
