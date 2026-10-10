@@ -34,39 +34,53 @@ async function getQuote(symbol, pair) {
 }
 
 async function getNews() {
-  const response = await fetch("https://nfs.faireconomy.media/ff_calendar_thisweek.json", {
-    headers: { "User-Agent": "Mozilla/5.0 SG-Upper-Ticker/1.0", "Accept": "application/json" },
-    signal: AbortSignal.timeout(8000)
-  });
-  if (!response.ok) throw new Error("ForexFactory calendar returned " + response.status);
-  const rows = await response.json();
+  const urls = [
+    "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+    "https://nfs.faireconomy.media/ff_calendar_nextweek.json"
+  ];
+  // Saturday/Sunday often have no remaining events in the current-week feed.
+  // Merge this week and next week so the ticker can always find the next USD releases.
+  const calendars = await Promise.all(urls.map(async url => {
+    const response = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 SG-Upper-Ticker/1.0", "Accept": "application/json" },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!response.ok) throw new Error("ForexFactory calendar returned " + response.status);
+    return response.json();
+  }));
   const dayKey = value => new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit"
   }).format(value);
-  const today = dayKey(new Date());
+  const now = Date.now();
 
-  const events = rows
-    .filter(item => String(item.currency || "").toUpperCase() === "USD")
-    .filter(item => ["High", "Medium", "Low"].includes(item.impact))
-    .filter(item => item.title && item.date)
-    .map(item => ({
+  const unique = new Map();
+  calendars.flat().forEach(item => {
+    if (String(item.currency || "").toUpperCase() !== "USD") return;
+    if (!["High", "Medium", "Low"].includes(item.impact)) return;
+    if (!item.title || !item.date) return;
+    const timestamp = new Date(item.date).getTime();
+    if (!Number.isFinite(timestamp)) return;
+    const key = String(item.title).trim().toLowerCase() + "|" + timestamp;
+    if (unique.has(key)) return;
+    unique.set(key, {
       title: item.title,
       impact: item.impact,
       time: item.date,
       actual: item.actual || "",
       forecast: item.forecast || "",
-      timestamp: new Date(item.date).getTime(),
-      day: dayKey(new Date(item.date))
-    }))
-    .filter(item => Number.isFinite(item.timestamp))
-    .sort((a, b) => a.timestamp - b.timestamp || IMPACT_ORDER[a.impact] - IMPACT_ORDER[b.impact]);
+      timestamp,
+      day: dayKey(new Date(timestamp))
+    });
+  });
 
-  // Prefer today's and upcoming USD events. On weekends, the public "this week"
-  // calendar can contain only past events; show the latest published events with
-  // their dates rather than leaving the ticker blank or implying they are upcoming.
-  const upcoming = events.filter(item => item.day >= today);
-  const selected = upcoming.length ? upcoming.slice(0, 4) : events.slice(-4).reverse();
-  return selected.map(({ day, ...item }) => ({ ...item, day }));
+  const events = [...unique.values()].sort((a, b) =>
+    a.timestamp - b.timestamp || IMPACT_ORDER[a.impact] - IMPACT_ORDER[b.impact]
+  );
+  // Show the next three upcoming USD releases, regardless of which day they fall on.
+  // If fewer than three remain in the two feeds, show all remaining upcoming events.
+  const upcoming = events.filter(item => item.timestamp >= now);
+  const selected = upcoming.length ? upcoming.slice(0, 3) : events.slice(-3).reverse();
+  return selected.map(({ timestamp, ...item }) => item);
 }
 
 module.exports = async function handler(req, res) {
