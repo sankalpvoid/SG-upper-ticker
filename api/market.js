@@ -6,15 +6,18 @@ const SYMBOLS = [
 ];
 
 async function getGoldSpotQuote() {
-  const response = await fetch("https://api.goldprice.dev/v1/prices?symbol=XAU-USD-SPOT", {
+  const response = await fetch("https://xaus.com/api/v1/spot?compact=1", {
     headers: { "User-Agent": "Mozilla/5.0 SG-Upper-Ticker/1.0", "Accept": "application/json" },
     signal: AbortSignal.timeout(8000)
   });
-  if (!response.ok) throw new Error("Gold spot source returned " + response.status);
+  if (!response.ok) throw new Error("XAU/USD spot source returned " + response.status);
   const payload = await response.json();
-  const quote = payload?.symbols?.find(item => item.symbol === "XAU" && item.quote_currency === "USD");
-  const price = Number(quote?.price);
-  if (!Number.isFinite(price) || quote?.is_stale === true) throw new Error("Fresh XAU/USD spot quote unavailable");
+  const price = Number(payload?.spot_usd_oz ?? payload?.xau?.price);
+  const state = String(payload?.data_state?.status || "").toLowerCase();
+  if (!Number.isFinite(price) || price <= 0) throw new Error("XAU/USD spot quote missing from source");
+  if (state && !["fresh", "live", "ok"].includes(state)) {
+    throw new Error("XAU/USD spot source is not fresh: " + state);
+  }
   return { pair: "XAU/USD", price, changePct: null };
 }
 
