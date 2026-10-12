@@ -60,7 +60,7 @@
   };
   const safe = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   function priceItem(q) {
-    const change = Number(q.changePct);
+    const change = typeof q.changePct === "number" && Number.isFinite(q.changePct) ? q.changePct : NaN;
     const cls = !Number.isFinite(change) || Math.abs(change) < .0005 ? 'flat' : change > 0 ? 'up' : 'down';
     const sign = Number.isFinite(change) && change > 0 ? '+' : '';
     const status = q.freshness === 'unavailable' ? 'UNAVAILABLE' : q.isStale ? 'STALE' : q.freshness === 'market-closed' ? 'CLOSED' : '';
