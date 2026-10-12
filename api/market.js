@@ -72,7 +72,7 @@ async function getQuote(symbol, pair) {
   const isContinuousMarket = symbol === "BTC-USD" || symbol === "GBPUSD=X" || symbol === "EURUSD=X";
   // Forex and crypto trade continuously; the index is only expected to refresh while its market is open.
   const staleThresholdSeconds = isContinuousMarket ? 15 * 60 : 20 * 60;
-  const isMarketClosed = !isContinuousMarket && ["CLOSED", "CLOSE"].includes(marketState);
+  const isMarketClosed = symbol !== "BTC-USD" && ["CLOSED", "CLOSE"].includes(marketState);
   const isStale = !timestampKnown || (!isMarketClosed && ageSeconds > staleThresholdSeconds);
 
   return {
