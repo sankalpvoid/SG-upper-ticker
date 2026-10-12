@@ -8,22 +8,37 @@ const SYMBOLS = [
 async function getGoldSpotQuote() {
   const response = await fetch("https://xaus.com/api/v1/spot?compact=1", {
     headers: {
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-          "Accept": "application/json,text/plain,*/*",
-          "Accept-Language": "en-US,en;q=0.9",
-          "Cache-Control": "no-cache"
-        },
+      "User-Agent": "SG-Upper-Ticker/1.0",
+      "Accept": "application/json"
+    },
     signal: AbortSignal.timeout(8000)
   });
   if (!response.ok) throw new Error("XAU/USD spot source returned " + response.status);
+
   const payload = await response.json();
   const price = Number(payload?.spot_usd_oz ?? payload?.xau?.price);
   const state = String(payload?.data_state?.status || "").toLowerCase();
+  const quoteAtRaw = payload?.data_state?.as_of || payload?.updated_at || null;
+  const quoteAtMs = quoteAtRaw ? new Date(quoteAtRaw).getTime() : NaN;
+  const ageSeconds = Number.isFinite(quoteAtMs)
+    ? Math.max(0, Math.floor((Date.now() - quoteAtMs) / 1000))
+    : Number(payload?.data_state?.age_seconds);
   if (!Number.isFinite(price) || price <= 0) throw new Error("XAU/USD spot quote missing from source");
-  if (state && !["fresh", "live", "ok"].includes(state)) {
-    throw new Error("XAU/USD spot source is not fresh: " + state);
-  }
-  return { pair: "XAU/USD", price, changePct: null };
+  if (state === "unavailable") throw new Error("XAU/USD spot source reports unavailable");
+
+  const timestampKnown = Number.isFinite(quoteAtMs);
+  const isStale = state === "stale" || (timestampKnown ? ageSeconds > 180 : true);
+  return {
+    pair: "XAU/USD",
+    price,
+    changePct: null,
+    source: "XAUS",
+    quoteAt: timestampKnown ? new Date(quoteAtMs).toISOString() : null,
+    ageSeconds: Number.isFinite(ageSeconds) ? ageSeconds : null,
+    marketState: null,
+    freshness: isStale ? "stale" : "fresh",
+    isStale
+  };
 }
 
 const IMPACT_ORDER = { High: 0, Medium: 1, Low: 2 };
@@ -36,20 +51,40 @@ async function getQuote(symbol, pair) {
     headers: { "User-Agent": "Mozilla/5.0 SG-Upper-Ticker/1.0", "Accept": "application/json" },
     signal: AbortSignal.timeout(7000)
   });
-  if (!response.ok) throw new Error("Quote source returned " + response.status);
+  if (!response.ok) throw new Error("Yahoo Finance returned " + response.status + " for " + pair);
+
   const payload = await response.json();
   const result = payload?.chart?.result?.[0];
   const meta = result?.meta;
+  const timestamps = result?.timestamp || [];
   const closes = result?.indicators?.quote?.[0]?.close || [];
   const valid = closes.filter(value => typeof value === "number" && Number.isFinite(value));
   const price = typeof meta?.regularMarketPrice === "number" ? meta.regularMarketPrice : valid.at(-1);
   const previous = typeof meta?.chartPreviousClose === "number" ? meta.chartPreviousClose :
     (typeof meta?.previousClose === "number" ? meta.previousClose : valid[0]);
   if (!Number.isFinite(price)) throw new Error("Quote missing for " + pair);
+
+  const sourceTimestamp = Number(meta?.regularMarketTime) || Number(timestamps.at(-1));
+  const quoteAtMs = Number.isFinite(sourceTimestamp) && sourceTimestamp > 0 ? sourceTimestamp * 1000 : NaN;
+  const timestampKnown = Number.isFinite(quoteAtMs);
+  const ageSeconds = timestampKnown ? Math.max(0, Math.floor((Date.now() - quoteAtMs) / 1000)) : null;
+  const marketState = String(meta?.marketState || "").toUpperCase() || null;
+  const isContinuousMarket = symbol === "BTC-USD" || symbol === "GBPUSD=X" || symbol === "EURUSD=X";
+  // Forex and crypto trade continuously; the index is only expected to refresh while its market is open.
+  const staleThresholdSeconds = isContinuousMarket ? 15 * 60 : 20 * 60;
+  const isMarketClosed = symbol !== "BTC-USD" && ["CLOSED", "CLOSE"].includes(marketState);
+  const isStale = !timestampKnown || (!isMarketClosed && ageSeconds > staleThresholdSeconds);
+
   return {
     pair,
     price,
-    changePct: Number.isFinite(previous) && previous !== 0 ? ((price - previous) / previous) * 100 : null
+    changePct: Number.isFinite(previous) && previous !== 0 ? ((price - previous) / previous) * 100 : null,
+    source: "Yahoo Finance",
+    quoteAt: timestampKnown ? new Date(quoteAtMs).toISOString() : null,
+    ageSeconds,
+    marketState,
+    freshness: isStale ? "stale" : (isMarketClosed ? "market-closed" : "fresh"),
+    isStale
   };
 }
 
@@ -204,12 +239,27 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const quotes = await Promise.allSettled([
-    getGoldSpotQuote(),
-    ...SYMBOLS.map(([symbol, pair]) => getQuote(symbol, pair))
-  ]);
-  // Preserve the requested display order: XAU/USD first, followed by NASDAQ, BTC/USD, GBP/USD, EUR/USD.
-  const prices = quotes.filter(item => item.status === "fulfilled").map(item => item.value);
+  const quoteSpecs = [
+    { pair: "XAU/USD", load: getGoldSpotQuote },
+    ...SYMBOLS.map(([symbol, pair]) => ({ pair, load: () => getQuote(symbol, pair) }))
+  ];
+  const settledQuotes = await Promise.allSettled(quoteSpecs.map(spec => spec.load()));
+  // Keep all five slots visible, including explicit unavailable states, rather than silently hiding failed quotes.
+  const prices = settledQuotes.map((item, index) => {
+    if (item.status === "fulfilled") return item.value;
+    return {
+      pair: quoteSpecs[index].pair,
+      price: null,
+      changePct: null,
+      source: index === 0 ? "XAUS" : "Yahoo Finance",
+      quoteAt: null,
+      ageSeconds: null,
+      marketState: null,
+      freshness: "unavailable",
+      isStale: false,
+      error: String(item.reason?.message || item.reason || "Quote unavailable")
+    };
+  });
   let news = [];
   let newsUnavailable = false;
   try {
@@ -222,7 +272,7 @@ module.exports = async function handler(req, res) {
     updatedAt: new Date().toISOString(),
     prices,
     news,
-    partial: prices.length !== SYMBOLS.length + 1 || newsUnavailable,
+    partial: prices.some(item => item.freshness === "unavailable" || item.isStale) || newsUnavailable,
     ...(req.query?.debug === "1" ? { debug: calendarDebug } : {})
   });
 };
